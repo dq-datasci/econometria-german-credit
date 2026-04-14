@@ -3,12 +3,13 @@ title: "Análisis Econométrico: German Credit Dataset"
 author: "dqdatasci"
 date: "`r Sys.Date()`"
 output:
-  pdf_document:
-    latex_engine: xelatex
-    toc: true
   html_document:
     toc: true
     theme: flatly
+    code_folding: show
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
 ---
 
 ```{r setup, include=FALSE}
