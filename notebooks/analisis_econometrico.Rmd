@@ -3,13 +3,13 @@ title: "Análisis Econométrico: German Credit Dataset"
 author: "dqdatasci"
 date: "`r Sys.Date()`"
 output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
   html_document:
     toc: true
     theme: flatly
     code_folding: show
-  pdf_document:
-    latex_engine: xelatex
-    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -22,7 +22,78 @@ library(tidyr)
 library(ggplot2)
 library(stargazer)
 library(margins)
+library(corrplot)
 
 # Cargar dataset
 data("GermanCredit")
 ```
+
+## 1. Introducción y Entendimiento del Negocio
+
+En el ámbito de la Inteligencia de Negocios y la gestión de riesgos financieros, el *Credit Scoring* es una de las aplicaciones más críticas. El objetivo de este análisis es evaluar los determinantes socioeconómicos e históricos que influyen en la probabilidad de que un cliente caiga en impago (default). 
+
+Para este estudio, utilizaremos el **German Credit Dataset**. A diferencia de un enfoque puramente predictivo de "caja negra", aquí aplicaremos un rigor econométrico progresivo: comenzaremos evaluando las fallas estructurales del Modelo de Probabilidad Lineal (MPL), para luego justificar teóricamente la transición hacia los modelos de elección discreta no lineales (Logit y Probit), evaluando sus efectos marginales y su capacidad predictiva real.
+
+## 2. Análisis Exploratorio de Datos (EDA) y Preprocesamiento
+
+### 2.1 Descubrimiento del Dataset
+
+El primer paso en cualquier flujo de trabajo de ciencia de datos es conocer la estructura de la información con la que contamos.
+
+```{r eda_inicial}
+# Ver las dimensiones del dataset
+dim(GermanCredit)
+
+# Inspección de la estructura general
+glimpse(GermanCredit[, 1:62])
+
+# Verificamos si existen valores nulos en el dataset
+total_nulos <- sum(is.na(GermanCredit))
+cat("Total de valores nulos en el dataset:", total_nulos, "\n")
+```
+### 2.1.1. Diagnóstico Estructural y Criterios Econométricos
+
+La inspección inicial revela características cruciales sobre la naturaleza de nuestros datos que dictarán nuestra estrategia de modelado:
+
+* **Tipos de Datos y Preparación para el Modelado (`<dbl>`):** Notamos que la gran mayoría de las variables están en formato `<dbl>` (numérico decimal), a pesar de que conceptualmente representan categorías (ej. `Housing.Rent`). Esto ocurre porque el dataset original ha sido preprocesado aplicando *One-Hot Encoding*. Lejos de ser un problema, esta estructura numérica es estrictamente necesaria en econometría. Funciones como `lm()` (para nuestro modelo base) y `glm()` (para Logit/Probit) resuelven los coeficientes ($\beta$) mediante álgebra matricial; al estar ya codificadas numéricamente, las variables están listas para el cálculo sin consumir memoria extra en transformaciones internas.
+
+* **Entendiendo las Variables Dummy:** Una variable *dummy* (o dicótoma) es la transformación numérica de un atributo cualitativo, tomando el valor de 1 si la característica está presente y 0 si está ausente. En nuestro *glimpse*, las reconocemos fácilmente porque su nombre combina la categoría original y su valor (ej. `Purpose.NewCar`), y sus únicos valores posibles son 0 o 1. Sirven para cuantificar "saltos" o diferencias en la probabilidad base en comparación con un grupo de referencia.
+
+* **La Trampa de las Variables Dummy y la Multicolinealidad:** La existencia de tantas variables dummy exige cautela. Tomemos el caso del tipo de vivienda, dividido en `Housing.Rent`, `Housing.Own` y `Housing.ForFree`. Si incluimos las tres en el modelo, caeremos en la *trampa de la variable dummy*, causando **multicolinealidad perfecta** (ya que la suma de las tres siempre será 1, siendo colineales con el intercepto). La multicolinealidad ocurre cuando las variables explicativas están altamente correlacionadas entre sí. Esto es fatal en econometría porque infla artificialmente los errores estándar de los coeficientes, destruyendo la fiabilidad de nuestras pruebas de significancia individual (los valores *p*). Siempre debemos omitir una categoría para que sirva como base de comparación.
+
+* **La Maldición de la Dimensionalidad y el Principio de Parsimonia:** El dataset cuenta con 62 columnas. Si introducimos todas estas variables explicativas en un modelo Logit con 1000 observaciones, sufriremos un sobreajuste masivo y una multicolinealidad severa. A diferencia de un enfoque puro de *Machine Learning* tipo "caja negra", en econometría buscamos la inferencia causal (el "por qué"). Explicar los efectos marginales de 62 variables carece de sentido práctico. Por ello, aplicaremos el **Principio de Parsimonia**, el cual dicta que "el modelo más simple que logre explicar de forma adecuada el fenómeno es el mejor". 
+
+Guiados por estos criterios, procederemos a seleccionar un subconjunto parsimonioso de variables explicativas con un fuerte sentido económico y financiero, reduciendo la dimensionalidad antes de estimar nuestro Modelo de Probabilidad Lineal.
+
+### 2.2 Selección de Variables: Un Enfoque Teórico y Estadístico
+
+La selección de características (*Feature Selection*) no puede ser un ejercicio arbitrario. Para garantizar la parsimonia y la validez inferencial de nuestros modelos, aplicaremos un enfoque híbrido que combina la teoría del riesgo crediticio con la validación estadística.
+
+**A. Fundamento Teórico (Las 5 C's del Crédito):**
+La literatura financiera evalúa el riesgo bajo 5 pilares fundamentales. De nuestras 62 variables iniciales, preseleccionamos aquellas que representan:
+1. **Capacidad de pago:** `Amount` (Monto), `Duration` (Plazo), `InstallmentRatePercentage` (Carga de la cuota).
+2. **Carácter (Historial):** `CreditHistory.Critical` (Malos antecedentes), `NumberExistingCredits`.
+3. **Capital/Condiciones:** `Age` (Edad), `Housing.Rent` (Falta de propiedad), `EmploymentDuration.gt.7` (Estabilidad laboral).
+
+**B. Validación Estadística (Multicolinealidad y Relevancia):**
+Antes de introducir las variables continuas y enteras al modelo, debemos comprobar que tengan algún grado de asociación con el riesgo de `Default` y, más importante aún en econometría, que no presenten **multicolinealidad** entre ellas (lo cual inflaría los errores estándar y arruinaría la inferencia).
+
+```{r correlacion, fig.align='center', fig.cap="Matriz de Correlación de Variables Numéricas"}
+# Creamos Y: 1 si es mal pagador, 0 si es buen pagador
+df_credito <- GermanCredit %>%
+  mutate(Default = ifelse(Class == "Bad", 1, 0))
+
+# Seleccionamos solo las variables numéricas clave para evaluar su correlación
+vars_numericas <- df_credito %>%
+  select(Default, Amount, Duration, Age, InstallmentRatePercentage, NumberExistingCredits, ResidenceDuration)
+
+# Calculamos la matriz de correlación (Método de Pearson)
+matriz_corr <- cor(vars_numericas)
+
+# Graficamos el mapa de calor
+corrplot(matriz_corr, method = "color", type = "lower", 
+         addCoef.col = "black", tl.col = "black", tl.srt = 45, 
+         number.cex = 0.7, diag = FALSE)
+``` 
+
+
