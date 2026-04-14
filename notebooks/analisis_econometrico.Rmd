@@ -1,0 +1,27 @@
+---
+title: "Análisis Econométrico: German Credit Dataset"
+author: "dqdatasci"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+  html_document:
+    toc: true
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Carga de librerías
+library(caret)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stargazer)
+library(margins)
+
+# Cargar dataset
+data("GermanCredit")
+```
