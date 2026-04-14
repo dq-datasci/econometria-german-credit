@@ -3,13 +3,13 @@ title: "Análisis Econométrico: German Credit Dataset"
 author: "dqdatasci"
 date: "`r Sys.Date()`"
 output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
   html_document:
     toc: true
     theme: flatly
     code_folding: show
-  pdf_document:
-    latex_engine: xelatex
-    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -105,4 +105,69 @@ La evaluación del mapa de calor nos proporciona evidencia empírica crucial par
 
 En conclusión, el bloque de variables numéricas para nuestro modelo base quedará conformado por: `Amount`, `Duration`, `Age`, e `InstallmentRatePercentage`.
 
+### 2.3 Justificación Teórica de Variables Categóricas (Las 5 C's del Crédito)
+
+A diferencia de las variables numéricas, la selección de variables dicótomas (*dummies*) no puede basarse en la correlación de Pearson. Para evitar la trampa de la variable dummy y mantener un modelo estrictamente parsimonioso, filtraremos las categorías guiándonos por el marco teórico de las **5 C's del Crédito (Capacidad, Capital, Colateral, Condiciones y Carácter)**, y descartando aquellas irrelevantes o éticamente cuestionables.
+
+* **Exclusiones estratégicas:** Descartamos las variables sociodemográficas puras (`Personal.*`), ya que nuestro análisis previo demostró que variables familiares no tenían correlación bivariada. Asimismo, descartamos `Telephone` y `ForeignWorker` por normativas de cumplimiento ético en riesgo crediticio, y la familia `Purpose.*` (propósito del crédito) debido a que su alta fragmentación diluiría los grados de libertad del modelo. Finalmente, para evaluar el empleo, priorizamos la estabilidad (`EmploymentDuration`) sobre la etiqueta del puesto (`Job.*`).
+* **Inclusiones estratégicas (Banderas Rojas y Verdes):**
+    1. **Liquidez y Reservas (Capital):** Evaluaremos si tener la cuenta corriente en negativo (`CheckingAccountStatus.lt.0`) o tener bajos ahorros (`SavingsAccountBonds.lt.100`) aumentan el riesgo.
+    2. **Historial (Carácter):** Consideramos `CreditHistory.Critical` como el principal indicador de comportamiento pasado.
+    3. **Sobreendeudamiento (Capacidad):** Incluimos `OtherInstallmentPlans.Bank` bajo la hipótesis de que deudas paralelas reducen la capacidad de pago.
+    4. **Avales y Activos (Colateral):** Incluimos `Property.RealEstate` (Bienes raíces) y `OtherDebtorsGuarantors.Guarantor` (Tener un garante) como atenuantes fuertes de riesgo (banderas verdes).
+
+### 2.4 Validación Estadística (Análisis de Proporciones y Chi-Cuadrado)
+
+Para comprobar si estas variables categóricas seleccionadas tienen un impacto real sobre la probabilidad de *Default*, ejecutaremos pruebas de independencia Chi-Cuadrado ($\chi^2$) y visualizaremos la proporción de impago.
+
+```{r proporciones_dummies, fig.align='center', fig.cap="Tasa de Impago (Default) según Historial Crediticio", fig.height=4, fig.width=6}
+# Variables dummy a evaluar
+dummies_evaluar <- c("CheckingAccountStatus.lt.0", "CreditHistory.Critical", 
+                     "EmploymentDuration.lt.1", "OtherInstallmentPlans.Bank", 
+                     "SavingsAccountBonds.lt.100", "Property.RealEstate", 
+                     "OtherDebtorsGuarantors.Guarantor")
+
+# 1. Bucle para calcular pruebas Chi-Cuadrado de independencia
+cat("--- Pruebas de Independencia Chi-Cuadrado (p-value < 0.05 indica relación significativa) ---\n")
+for(var in dummies_evaluar) {
+  # Creamos una tabla de contingencia entre Default y la variable Dummy
+  tabla_cont <- table(df_credito[[var]], df_credito$Default)
+  prueba_chi <- chisq.test(tabla_cont, correct = FALSE)
+  
+  # Imprimimos los resultados de forma legible
+  cat(sprintf("Variable: %-35s | P-value: %.4f\n", var, prueba_chi$p.value))
+}
+
+# 2. Visualización del impacto (Ejemplo con CreditHistory.Critical)
+# Calculamos la proporción de malos pagadores para cada grupo
+grafico_historial <- df_credito %>%
+  group_by(CreditHistory.Critical, Default) %>% # Directo a agrupar, sin el error
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(CreditHistory.Critical) %>%
+  mutate(Proporcion = n / sum(n) * 100) %>%
+  filter(Default == 1) %>% # Solo nos interesa la barra de malos pagadores
+  mutate(Historial = ifelse(CreditHistory.Critical == 1, "Crítico (1)", "Sano/Bueno (0)"))
+
+# Gráfico de barras
+ggplot(grafico_historial, aes(x = Historial, y = Proporcion, fill = Historial)) +
+  geom_bar(stat = "identity", width = 0.5, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("%.1f%%", Proporcion)), vjust = -0.5, fontface = "bold") +
+  scale_fill_manual(values = c("Crítico (1)" = "#E74C3C", "Sano/Bueno (0)" = "#2E86C1")) +
+  theme_minimal() +
+  labs(title = "Probabilidad de Default: Impacto del Historial Crediticio",
+       subtitle = "¿Tener un historial crítico aumenta el riesgo estadísticamente?",
+       y = "Porcentaje de Clientes en Default",
+       x = "Estado del Historial Crediticio") +
+  ylim(0, 50)
+```
+**Conclusión de la Validación Estadística e Insights de Negocio:**
+
+Los resultados de las pruebas no paramétricas Chi-Cuadrado justifican empíricamente nuestra selección teórica, pero con una excepción. Seis de las siete variables evaluadas arrojaron valores $p$ sustancialmente menores al umbral de significancia del 0.05 (la mayoría con $p < 0.01$), confirmando una asociación estadística robusta con la probabilidad de *Default*. Sin embargo, la variable correspondiente a tener un garante (`OtherDebtorsGuarantors.Guarantor`) arrojó un valor $p$ de 0.0818. Para mantener un rigor econométrico estricto del 95% de confianza y favorecer la parsimonia del modelo, esta variable será excluida de las estimaciones posteriores.
+
+Adicionalmente, el análisis visual revela "insights" de negocio contra-intuitivos sumamente valiosos. Como se observa en el gráfico de barras, la proporción de impago en clientes catalogados con un historial "Crítico" es sorprendentemente inferior (17.1%) en comparación con aquellos de historial "Sano/Bueno" (35.4%). En el contexto de la banca alemana, un historial crítico suele denotar la existencia de múltiples créditos activos en otras instituciones, lo cual se traduce en un cliente experimentado y rastreable dentro del sistema financiero. Por el contrario, un historial "sano" a menudo agrupa a clientes sin antecedentes crediticios previos, cuyo comportamiento incierto representa un riesgo de impago matemáticamente superior para la institución. 
+
+Por lo tanto, nuestro dataset analítico final para la modelización econométrica constará de la variable dependiente binaria `Default` y un subconjunto parsimonioso de variables explicativas altamente significativas:
+
+1. **Continuas/Enteras:** `Amount`, `Duration` `Age`, `InstallmentRatePercentage`.
+2. **Dicótomas (Dummies):** `CheckingAccountStatus.lt.0`, `CreditHistory.Critical`, `EmploymentDuration.lt.1`, `OtherInstallmentPlans.Bank`, `SavingsAccountBonds.lt.100`, `Property.RealEstate`.
 
