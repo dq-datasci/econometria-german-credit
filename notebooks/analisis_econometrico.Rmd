@@ -3,13 +3,13 @@ title: "Análisis Econométrico: German Credit Dataset"
 author: "dqdatasci"
 date: "`r Sys.Date()`"
 output:
-  pdf_document:
-    latex_engine: xelatex
-    toc: true
   html_document:
     toc: true
     theme: flatly
     code_folding: show
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -73,7 +73,7 @@ La selección de características (*Feature Selection*) no puede ser un ejercici
 La literatura financiera evalúa el riesgo bajo 5 pilares fundamentales. De nuestras 62 variables iniciales, preseleccionamos aquellas que representan:
 1. **Capacidad de pago:** `Amount` (Monto), `Duration` (Plazo), `InstallmentRatePercentage` (Carga de la cuota).
 2. **Carácter (Historial):** `CreditHistory.Critical` (Malos antecedentes), `NumberExistingCredits`.
-3. **Capital/Condiciones:** `Age` (Edad), `Housing.Rent` (Falta de propiedad), `EmploymentDuration.gt.7` (Estabilidad laboral).
+3. **Capital/Condiciones:** `Age` (Edad), `Housing.Rent` (Falta de propiedad), `EmploymentDuration.gt.7` (Estabilidad laboral), `NumberPeopleMaintenance` (número de dependientes económicos).
 
 **B. Validación Estadística (Multicolinealidad y Relevancia):**
 Antes de introducir las variables continuas y enteras al modelo, debemos comprobar que tengan algún grado de asociación con el riesgo de `Default` y, más importante aún en econometría, que no presenten **multicolinealidad** entre ellas (lo cual inflaría los errores estándar y arruinaría la inferencia).
@@ -85,7 +85,7 @@ df_credito <- GermanCredit %>%
 
 # Seleccionamos solo las variables numéricas clave para evaluar su correlación
 vars_numericas <- df_credito %>%
-  select(Default, Amount, Duration, Age, InstallmentRatePercentage, NumberExistingCredits, ResidenceDuration)
+  select(Default, Amount, Duration, Age, InstallmentRatePercentage, NumberExistingCredits, ResidenceDuration, NumberPeopleMaintenance)
 
 # Calculamos la matriz de correlación (Método de Pearson)
 matriz_corr <- cor(vars_numericas)
@@ -94,6 +94,15 @@ matriz_corr <- cor(vars_numericas)
 corrplot(matriz_corr, method = "color", type = "lower", 
          addCoef.col = "black", tl.col = "black", tl.srt = 45, 
          number.cex = 0.7, diag = FALSE)
-``` 
+```
+**Análisis de la Matriz de Correlación y Decisiones de Modelado:**
+
+La evaluación del mapa de calor nos proporciona evidencia empírica crucial para filtrar nuestras variables continuas y enteras antes de la estimación econométrica:
+
+1. **Evidencia de Multicolinealidad:** Observamos una fuerte correlación positiva (0.62) entre el monto del crédito (`Amount`) y el plazo (`Duration`). Teóricamente es coherente (créditos más grandes requieren más meses para pagarse). Aunque esto es una alerta roja de colinealidad, mantendremos ambas variables en la estimación inicial del Modelo de Probabilidad Lineal (MPL) para someterlas a la prueba formal del Factor de Inflación de la Varianza (VIF) y cuantificar su impacto real en los errores estándar antes de descartar alguna.
+2. **Depuración por Principio de Parsimonia:** Las variables `NumberPeopleMaintenance` (dependientes económicos) y `ResidenceDuration` (tiempo en la vivienda actual) presentan una correlación bivariada de exactamente 0.00 con nuestra variable dependiente (`Default`). Incluir variables que no aportan poder explicativo inicial solo penaliza los grados de libertad del modelo. Respaldados por esta nula asociación estadística, decidimos excluirlas del modelo final para mantener la parsimonia.
+3. **Consistencia Teórica de los Signos:** Las variables `Age` (-0.09) e `InstallmentRatePercentage` (0.07) muestran asociaciones coherentes con la teoría del riesgo: mayor edad sugiere menor riesgo de impago, mientras que una mayor carga de la cuota sobre el ingreso sugiere un riesgo superior.
+
+En conclusión, el bloque de variables numéricas para nuestro modelo base quedará conformado por: `Amount`, `Duration`, `Age`, e `InstallmentRatePercentage`.
 
 
