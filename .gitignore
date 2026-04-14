@@ -1,0 +1,46 @@
+# --- R Specific ---
+.Rhistory
+.RData
+.Rapp.history
+.Ruserdata
+*-Ex.R
+/*.tar.gz
+/*.Rcheck/
+.temp/
+.libPaths()
+
+# --- RStudio Specific ---
+.Rproj.user/
+.Rproj.user*
+
+# --- renv (Crucial para reproducibilidad) ---
+# Ignoramos la librería local de paquetes (es muy pesada), 
+# pero NO ignoramos renv.lock ni el script de activación.
+renv/library/
+renv/python/
+renv/staging/
+renv/local/
+
+# --- Documentos Dinámicos (Knitr / R Markdown) ---
+# Ignoramos carpetas de caché y archivos generados que se reconstruyen al correr el código
+*_cache/
+*_files/
+# Archivos temporales de la compilación de LaTeX (para el PDF)
+*.log
+*.aux
+*.out
+*.toc
+*.synctex.gz
+*.blg
+*.bbl
+
+# --- Datos y Outputs ---
+# Si decides descargar datasets externos o generar archivos pesados
+# /data/*.csv
+# /data/*.xlsx
+# /output/
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+desktop.ini
