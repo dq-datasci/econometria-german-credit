@@ -271,3 +271,45 @@ Los resultados de la predicción evidencian la falla más crítica del Modelo de
 
 Al no poder acotar las predicciones al intervalo $[0,1]$, el MPL queda descartado como herramienta predictiva y analítica para este problema de *Credit Scoring*, obligándonos a abandonar el método de Mínimos Cuadrados Ordinarios (MCO) y transitar hacia modelos de elección discreta estimados por Máxima Verosimilitud (MV).
 
+## 4. Modelos de Elección Discreta: Logit y Probit
+
+Para corregir los defectos estructurales del MPL, ajustaremos la estimación utilizando funciones de distribución acumulativa (FDA) que garantizan en todo momento que $0 \leq P(Y=1) \leq 1$. 
+
+1. **Modelo Logit:** Utiliza la función de distribución logística. Modela el logaritmo de la razón de probabilidades (*Log-Odds*).
+2. **Modelo Probit (Normit):** Basado en la teoría de la elección racional y variables latentes inobservables, utiliza la función de distribución normal estándar. 
+
+Dado que estamos trabajando con datos a nivel individual (no agrupados), el método de estimación a utilizar será estrictamente el de Máxima Verosimilitud.
+
+```{r estimacion_logit_probit, warning=FALSE, message=FALSE, results='asis'}
+# 1. Estimación del Modelo Logit
+modelo_logit <- glm(Default ~ ., data = df_final, family = binomial(link = "logit"))
+
+# 2. Estimación del Modelo Probit
+modelo_probit <- glm(Default ~ ., data = df_final, family = binomial(link = "probit"))
+
+# 3. Cuadro Comparativo Estilo Académico (Stargazer)
+stargazer(mpl_model, modelo_logit, modelo_probit, 
+          type = "latex", # <--- "latex" para pdf "html" para html
+          title = "Comparación de Modelos: MPL vs Logit vs Probit",
+          column.labels = c("MCO (MPL)", "Logit", "Probit"),
+          dep.var.labels = "Probabilidad de Default",
+          covariate.labels = c("Monto del Crédito", "Plazo (Meses)", "Edad", 
+                               "Carga de la Cuota (%)", "Cuenta Corriente (<0)", 
+                               "Historial Crítico", "Empleo Reciente (<1 año)", 
+                               "Otras Deudas Bancarias", "Ahorros Bajos (<100)", 
+                               "Bienes Raíces (Sí)"),
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          keep.stat = c("n", "rsq", "ll", "aic"),
+          notes = "Errores estándar en paréntesis.")
+```
+
+### 4.1 Análisis Comparativo de Estimaciones
+
+Al observar la tabla de resultados, extraemos tres conclusiones teóricas fundamentales:
+
+1. **Consistencia de Signos e Inferencia:** Los tres modelos (MPL, Logit y Probit) son absolutamente consistentes en la dirección de los efectos. Las variables que incrementan el riesgo en el MPL (signo positivo) también lo hacen en Logit y Probit. Asimismo, la significancia estadística (los valores $p$) se mantiene estable a través de las tres metodologías.
+2. **Escala de los Coeficientes (Regla del 1.6):** Como advierte la literatura econométrica (Gujarati, 2004), la magnitud de los coeficientes difiere entre los modelos no lineales debido a las escalas de sus distribuciones subyacentes. Se cumple empíricamente la regla de proporcionalidad: los estimadores Logit son aproximadamente 1.6 veces mayores que los del Probit. Por ejemplo, el coeficiente de *Cuenta Corriente (<0)* en el Logit (1.071) es $\approx 1.67$ veces el del Probit (0.639).
+3. **Pérdida de Interpretación Directa:** A diferencia del MPL, los coeficientes de Logit y Probit mostrados en la tabla carecen de una interpretación económica directa. Un estimador de 1.071 en el Logit no significa que la probabilidad aumente en un 107%; significa que el *Log-Odds* (el logaritmo de la razón de probabilidades) aumenta en 1.071 unidades. 
+
+Para recuperar la interpretación práctica que requiere la Inteligencia de Negocios, el siguiente paso será evaluar la bondad de ajuste de estos modelos (pseudo-$R^2$) y, primordialmente, calcular los **Efectos Marginales Promedio (AME)**.
+

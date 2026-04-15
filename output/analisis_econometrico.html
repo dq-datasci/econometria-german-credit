@@ -498,6 +498,12 @@ Interpretación de los Diagnósticos Estructurales</a></li>
 El “Golpe de Gracia” al MPL: Errores Robustos y Predicciones
 Ilógicas</a></li>
 </ul></li>
+<li><a href="#modelos-de-elecci%C3%B3n-discreta-logit-y-probit" id="toc-modelos-de-elección-discreta-logit-y-probit">4. Modelos de
+Elección Discreta: Logit y Probit</a>
+<ul>
+<li><a href="#an%C3%A1lisis-comparativo-de-estimaciones" id="toc-análisis-comparativo-de-estimaciones">4.1 Análisis Comparativo
+de Estimaciones</a></li>
+</ul></li>
 </ul>
 </div>
 
@@ -1069,6 +1075,630 @@ herramienta predictiva y analítica para este problema de <em>Credit
 Scoring</em>, obligándonos a abandonar el método de Mínimos Cuadrados
 Ordinarios (MCO) y transitar hacia modelos de elección discreta
 estimados por Máxima Verosimilitud (MV).</p>
+</div>
+</div>
+<div id="modelos-de-elección-discreta-logit-y-probit" class="section level2">
+<h2>4. Modelos de Elección Discreta: Logit y Probit</h2>
+<p>Para corregir los defectos estructurales del MPL, ajustaremos la
+estimación utilizando funciones de distribución acumulativa (FDA) que
+garantizan en todo momento que <span class="math inline">\(0 \leq P(Y=1)
+\leq 1\)</span>.</p>
+<ol style="list-style-type: decimal">
+<li><strong>Modelo Logit:</strong> Utiliza la función de distribución
+logística. Modela el logaritmo de la razón de probabilidades
+(<em>Log-Odds</em>).</li>
+<li><strong>Modelo Probit (Normit):</strong> Basado en la teoría de la
+elección racional y variables latentes inobservables, utiliza la función
+de distribución normal estándar.</li>
+</ol>
+<p>Dado que estamos trabajando con datos a nivel individual (no
+agrupados), el método de estimación a utilizar será estrictamente el de
+Máxima Verosimilitud.</p>
+<pre class="r"><code># 1. Estimación del Modelo Logit
+modelo_logit &lt;- glm(Default ~ ., data = df_final, family = binomial(link = &quot;logit&quot;))
+
+# 2. Estimación del Modelo Probit
+modelo_probit &lt;- glm(Default ~ ., data = df_final, family = binomial(link = &quot;probit&quot;))
+
+# 3. Cuadro Comparativo Estilo Académico (Stargazer)
+stargazer(mpl_model, modelo_logit, modelo_probit, 
+          type = &quot;html&quot;, # &lt;--- &quot;latex&quot; para pdf &quot;html&quot; para html
+          title = &quot;Comparación de Modelos: MPL vs Logit vs Probit&quot;,
+          column.labels = c(&quot;MCO (MPL)&quot;, &quot;Logit&quot;, &quot;Probit&quot;),
+          dep.var.labels = &quot;Probabilidad de Default&quot;,
+          covariate.labels = c(&quot;Monto del Crédito&quot;, &quot;Plazo (Meses)&quot;, &quot;Edad&quot;, 
+                               &quot;Carga de la Cuota (%)&quot;, &quot;Cuenta Corriente (&lt;0)&quot;, 
+                               &quot;Historial Crítico&quot;, &quot;Empleo Reciente (&lt;1 año)&quot;, 
+                               &quot;Otras Deudas Bancarias&quot;, &quot;Ahorros Bajos (&lt;100)&quot;, 
+                               &quot;Bienes Raíces (Sí)&quot;),
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          keep.stat = c(&quot;n&quot;, &quot;rsq&quot;, &quot;ll&quot;, &quot;aic&quot;),
+          notes = &quot;Errores estándar en paréntesis.&quot;)</code></pre>
+<table style="text-align:center">
+<caption>
+<strong>Comparación de Modelos: MPL vs Logit vs Probit</strong>
+</caption>
+<tr>
+<td colspan="4" style="border-bottom: 1px solid black">
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td colspan="3">
+<em>Dependent variable:</em>
+</td>
+</tr>
+<tr>
+<td>
+</td>
+<td colspan="3" style="border-bottom: 1px solid black">
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td colspan="3">
+Probabilidad de Default
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+<em>OLS</em>
+</td>
+<td>
+<em>logistic</em>
+</td>
+<td>
+<em>probit</em>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+MCO (MPL)
+</td>
+<td>
+Logit
+</td>
+<td>
+Probit
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(1)
+</td>
+<td>
+(2)
+</td>
+<td>
+(3)
+</td>
+</tr>
+<tr>
+<td colspan="4" style="border-bottom: 1px solid black">
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Monto del Crédito
+</td>
+<td>
+0.00001<sup>*</sup>
+</td>
+<td>
+0.0001<sup>*</sup>
+</td>
+<td>
+0.00005<sup>*</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.00001)
+</td>
+<td>
+(0.00004)
+</td>
+<td>
+(0.00002)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Plazo (Meses)
+</td>
+<td>
+0.005<sup>**</sup>
+</td>
+<td>
+0.026<sup>**</sup>
+</td>
+<td>
+0.016<sup>**</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.002)
+</td>
+<td>
+(0.008)
+</td>
+<td>
+(0.005)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Edad
+</td>
+<td>
+-0.002
+</td>
+<td>
+-0.014
+</td>
+<td>
+-0.008
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.001)
+</td>
+<td>
+(0.007)
+</td>
+<td>
+(0.004)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Carga de la Cuota (%)
+</td>
+<td>
+0.037<sup>**</sup>
+</td>
+<td>
+0.222<sup>**</sup>
+</td>
+<td>
+0.126<sup>**</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.013)
+</td>
+<td>
+(0.077)
+</td>
+<td>
+(0.045)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Cuenta Corriente (&lt;0)
+</td>
+<td>
+0.217<sup>***</sup>
+</td>
+<td>
+1.071<sup>***</sup>
+</td>
+<td>
+0.639<sup>***</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.031)
+</td>
+<td>
+(0.166)
+</td>
+<td>
+(0.099)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Historial Crítico
+</td>
+<td>
+-0.137<sup>***</sup>
+</td>
+<td>
+-0.851<sup>***</sup>
+</td>
+<td>
+-0.499<sup>***</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.030)
+</td>
+<td>
+(0.189)
+</td>
+<td>
+(0.107)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Empleo Reciente (&lt;1 año)
+</td>
+<td>
+0.102<sup>**</sup>
+</td>
+<td>
+0.525<sup>**</sup>
+</td>
+<td>
+0.309<sup>**</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.036)
+</td>
+<td>
+(0.197)
+</td>
+<td>
+(0.117)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Otras Deudas Bancarias
+</td>
+<td>
+0.106<sup>**</sup>
+</td>
+<td>
+0.574<sup>**</sup>
+</td>
+<td>
+0.348<sup>**</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.038)
+</td>
+<td>
+(0.208)
+</td>
+<td>
+(0.124)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Ahorros Bajos (&lt;100)
+</td>
+<td>
+0.108<sup>***</sup>
+</td>
+<td>
+0.646<sup>***</sup>
+</td>
+<td>
+0.370<sup>***</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.028)
+</td>
+<td>
+(0.168)
+</td>
+<td>
+(0.097)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Bienes Raíces (Sí)
+</td>
+<td>
+-0.054
+</td>
+<td>
+-0.337
+</td>
+<td>
+-0.204
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.031)
+</td>
+<td>
+(0.186)
+</td>
+<td>
+(0.108)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Constant
+</td>
+<td>
+0.011
+</td>
+<td>
+-2.512<sup>***</sup>
+</td>
+<td>
+-1.472<sup>***</sup>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+(0.067)
+</td>
+<td>
+(0.404)
+</td>
+<td>
+(0.234)
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td colspan="4" style="border-bottom: 1px solid black">
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Observations
+</td>
+<td>
+1,000
+</td>
+<td>
+1,000
+</td>
+<td>
+1,000
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+R<sup>2</sup>
+</td>
+<td>
+0.174
+</td>
+<td>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Log Likelihood
+</td>
+<td>
+</td>
+<td>
+-518.526
+</td>
+<td>
+-518.618
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+Akaike Inf. Crit.
+</td>
+<td>
+</td>
+<td>
+1,059.052
+</td>
+<td>
+1,059.237
+</td>
+</tr>
+<tr>
+<td colspan="4" style="border-bottom: 1px solid black">
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+<em>Note:</em>
+</td>
+<td colspan="3" style="text-align:right">
+<sup><em></sup>p&lt;0.05; <sup><strong></sup>p&lt;0.01;
+<sup></strong></em></sup>p&lt;0.001
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td colspan="3" style="text-align:right">
+Errores estándar en paréntesis.
+</td>
+</tr>
+</table>
+<div id="análisis-comparativo-de-estimaciones" class="section level3">
+<h3>4.1 Análisis Comparativo de Estimaciones</h3>
+<p>Al observar la tabla de resultados, extraemos tres conclusiones
+teóricas fundamentales:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Consistencia de Signos e Inferencia:</strong> Los tres
+modelos (MPL, Logit y Probit) son absolutamente consistentes en la
+dirección de los efectos. Las variables que incrementan el riesgo en el
+MPL (signo positivo) también lo hacen en Logit y Probit. Asimismo, la
+significancia estadística (los valores <span class="math inline">\(p\)</span>) se mantiene estable a través de las
+tres metodologías.</li>
+<li><strong>Escala de los Coeficientes (Regla del 1.6):</strong> Como
+advierte la literatura econométrica (Gujarati, 2004), la magnitud de los
+coeficientes difiere entre los modelos no lineales debido a las escalas
+de sus distribuciones subyacentes. Se cumple empíricamente la regla de
+proporcionalidad: los estimadores Logit son aproximadamente 1.6 veces
+mayores que los del Probit. Por ejemplo, el coeficiente de <em>Cuenta
+Corriente (&lt;0)</em> en el Logit (1.071) es <span class="math inline">\(\approx 1.67\)</span> veces el del Probit
+(0.639).</li>
+<li><strong>Pérdida de Interpretación Directa:</strong> A diferencia del
+MPL, los coeficientes de Logit y Probit mostrados en la tabla carecen de
+una interpretación económica directa. Un estimador de 1.071 en el Logit
+no significa que la probabilidad aumente en un 107%; significa que el
+<em>Log-Odds</em> (el logaritmo de la razón de probabilidades) aumenta
+en 1.071 unidades.</li>
+</ol>
+<p>Para recuperar la interpretación práctica que requiere la
+Inteligencia de Negocios, el siguiente paso será evaluar la bondad de
+ajuste de estos modelos (pseudo-<span class="math inline">\(R^2\)</span>) y, primordialmente, calcular los
+<strong>Efectos Marginales Promedio (AME)</strong>.</p>
 </div>
 </div>
 
