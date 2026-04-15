@@ -23,6 +23,8 @@ library(ggplot2)
 library(stargazer)
 library(margins)
 library(corrplot)
+library(car)
+library(lmtest)
 
 # Cargar dataset
 data("GermanCredit")
@@ -170,4 +172,102 @@ Por lo tanto, nuestro dataset analítico final para la modelización econométri
 
 1. **Continuas/Enteras:** `Amount`, `Duration` `Age`, `InstallmentRatePercentage`.
 2. **Dicótomas (Dummies):** `CheckingAccountStatus.lt.0`, `CreditHistory.Critical`, `EmploymentDuration.lt.1`, `OtherInstallmentPlans.Bank`, `SavingsAccountBonds.lt.100`, `Property.RealEstate`.
+
+## 3. Estimación y Diagnóstico del Modelo de Probabilidad Lineal (MPL)
+
+### 3.1 Construcción del Modelo Base (MCO)
+
+Como punto de partida teórico, estimaremos un Modelo de Probabilidad Lineal (MPL) mediante Mínimos Cuadrados Ordinarios (MCO). Aunque la literatura econométrica (Gujarati, 2004) advierte sobre las deficiencias estructurales de aplicar MCO a variables dependientes dicótomas, este modelo servirá como línea base para realizar diagnósticos críticos, específicamente la evaluación de multicolinealidad multilateral y la comprobación de heteroscedasticidad.
+
+```{r estimacion_mpl, warning=FALSE, message=FALSE}
+# 1. Consolidación del dataset final con las variables rigurosamente seleccionadas
+df_final <- df_credito %>%
+  select(
+    Default,
+    Amount, Duration, Age, InstallmentRatePercentage, # Variables Numéricas
+    CheckingAccountStatus.lt.0, CreditHistory.Critical, # Dummies
+    EmploymentDuration.lt.1, OtherInstallmentPlans.Bank, 
+    SavingsAccountBonds.lt.100, Property.RealEstate
+  )
+
+# 2. Estimación del MPL
+mpl_model <- lm(Default ~ ., data = df_final)
+
+# (Omitimos el summary completo temporalmente para enfocarnos en los diagnósticos)
+```
+
+### 3.2 Diagnóstico 1: Evaluación de Multicolinealidad (VIF)
+
+En la fase exploratoria detectamos una correlación bivariada de 0.62 entre el Monto (Amount) y el Plazo (Duration). Para determinar si esta relación infla artificialmente las varianzas de nuestros estimadores, aplicaremos el Factor de Inflación de la Varianza (VIF). Un VIF superior a 5 (o estrictamente > 4) indicaría multicolinealidad severa.
+
+```{r VIF, warning=FALSE, message=FALSE}
+# Calculamos el VIF
+vif_resultados <- vif(mpl_model)
+print(vif_resultados)
+```
+
+### 3.3 Diagnóstico 2: Prueba de Heteroscedasticidad (Breusch-Pagan)
+
+Una de las violaciones fundamentales del MPL es que, por construcción matemática (dado que los errores siguen una distribución de Bernoulli), la varianza del error no es constante, sino que depende de los valores de $X$. Probaremos esto formalmente.
+
+```{r heteroscedasticidad, warning=FALSE, message=FALSE}
+# Prueba de Breusch-Pagan
+bptest(mpl_model)
+```
+
+### 3.4 Interpretación de los Diagnósticos Estructurales
+
+La ejecución de las pruebas de diagnóstico sobre el Modelo de Probabilidad Lineal (MPL) nos arroja dos conclusiones fundamentales que dictarán nuestras siguientes decisiones metodológicas:
+
+**1. Superación de la Multicolinealidad (VIF):**
+A pesar de la alta correlación bivariada inicial (0.62) observada en el mapa de calor entre el monto (`Amount`) y el plazo (`Duration`), el cálculo del Factor de Inflación de la Varianza (VIF) descarta la existencia de multicolinealidad multilateral severa. Todos los valores VIF se encuentran muy por debajo del umbral crítico de 4 (el valor máximo es 2.03 para `Amount`). Esto nos otorga el respaldo estadístico para mantener ambas variables en el modelo, preservando la riqueza interpretativa del riesgo crediticio sin comprometer las varianzas de los estimadores.
+
+**2. Confirmación de la Heteroscedasticidad (Breusch-Pagan):**
+La prueba de Breusch-Pagan arroja un valor $p$ de $3.981 \times 10^{-14}$, rechazando contundentemente la hipótesis nula de varianza constante. Este resultado empírico no es una sorpresa, sino una demostración de la falla estructural inherente al MPL. Como advierte la teoría econométrica, dado que la variable dependiente $Y$ sigue una distribución de Bernoulli, la varianza del término de error depende lógicamente de los valores de las variables explicativas ($Var(u_i) = P_i(1-P_i)$). 
+
+*Nota metodológica:* En este contexto, resulta innecesario aplicar pruebas adicionales de heteroscedasticidad (como White, Glejser o Goldfeld-Quandt). El objetivo en un MPL no es "descubrir" la forma de la heteroscedasticidad, sino simplemente probar empíricamente su existencia inevitable para justificar la corrección de los errores estándar.
+
+### 3.5 El "Golpe de Gracia" al MPL: Errores Robustos y Predicciones Ilógicas
+
+Dado que hemos comprobado la heteroscedasticidad, los errores estándar clásicos calculados por MCO están sesgados, invalidando cualquier inferencia sobre los *p-values* tradicionales. Para corregir esto, aplicaremos la matriz de varianzas y covarianzas consistente con la heteroscedasticidad (Corrección HCCM).
+
+Aún con esta corrección, expondremos el defecto más grave del MPL: su incapacidad para restringir las estimaciones dentro del rango lógico de probabilidades. Someteremos el modelo a una "prueba de estrés" creando dos perfiles de clientes diametralmente opuestos para observar cómo el modelo genera probabilidades ilógicas ($< 0$ o $> 1$).
+
+```{r sandwhich, warning=FALSE, message=FALSE}
+# 1. Aplicación de Errores Estándar Robustos (HCCM)
+# Muestra los coeficientes con los p-values corregidos
+coeftest(mpl_model, vcov = hccm)
+
+# 2. Prueba de Estrés: Creación de perfiles extremos
+# Perfil 1: El "Cliente Ideal" (Bajo riesgo) vs Perfil 2: El "Cliente de Alto Riesgo"
+perfiles_extremos <- data.frame(
+  Amount = c(1000, 15000),                     # Monto bajo vs Monto muy alto
+  Duration = c(6, 48),                         # Plazo corto vs Plazo muy largo
+  Age = c(60, 20),                             # Mayor edad vs Muy joven
+  InstallmentRatePercentage = c(1, 4),         # Cuota cómoda vs Cuota asfixiante
+  CheckingAccountStatus.lt.0 = c(0, 1),        # Cuenta sana vs Cuenta en negativo
+  CreditHistory.Critical = c(1, 0),            # Con historial previo vs Sin historial (fantasma)
+  EmploymentDuration.lt.1 = c(0, 1),           # Empleo estable vs Empleo muy reciente
+  OtherInstallmentPlans.Bank = c(0, 1),        # Sin otras deudas vs Con deudas paralelas
+  SavingsAccountBonds.lt.100 = c(0, 1),        # Con ahorros vs Sin ahorros
+  Property.RealEstate = c(1, 0)                # Con propiedad vs Sin propiedad (inquilino)
+)
+
+# 3. Predicción de la probabilidad de Default para estos perfiles
+predicciones_mpl <- predict(mpl_model, newdata = perfiles_extremos)
+print(predicciones_mpl)
+```
+
+**Análisis de Significancia con Errores Robustos (HCCM):**
+La aplicación de la matriz de varianzas y covarianzas consistente con la heteroscedasticidad (Corrección HCCM) nos permite realizar inferencia válida sobre los coeficientes del MPL, blindando nuestros valores p contra el sesgo inducido por la varianza no constante. 
+
+Al observar la salida robusta, extraemos conclusiones vitales sobre los determinantes del riesgo crediticio:
+
+1. **Predictores Estructurales (Alta Significancia):** Las variables relacionadas con la liquidez inmediata y el comportamiento histórico (`CheckingAccountStatus.lt.0`, `CreditHistory.Critical` y `SavingsAccountBonds.lt.100`) mantienen una significancia estadística rotunda (p-value < 0.001). Por ejemplo, el coeficiente de la cuenta corriente en negativo indica que, *ceteris paribus*, esta condición incrementa la probabilidad de impago en aproximadamente 21.7 puntos porcentuales. Se confirma también el hallazgo exploratorio sobre el historial crediticio crítico, el cual reduce la probabilidad de impago en 13.7 puntos porcentuales (reflejando el perfil del cliente bancarizado recurrente).
+2. **Impacto de la Corrección (Significancia Marginal):** Variables demográficas y de patrimonio como la edad (`Age`) y la tenencia de bienes raíces (`Property.RealEstate`), así como el monto del crédito (`Amount`), pierden su significancia estricta al 5% tras la corrección robusta (sus valores p se ubican entre 0.06 y 0.09). Esto demuestra el valor empírico de la corrección de White/HCCM, previniendo que el banco tome decisiones basadas en "falsos positivos" estadísticos (Errores Tipo I) generados por la heteroscedasticidad del modelo clásico.
+
+**Conclusión de la Prueba de Estrés (El Colapso del MPL):**
+Los resultados de la predicción evidencian la falla más crítica del Modelo de Probabilidad Lineal advertida por la teoría econométrica. Para el "Perfil 1" (cliente de bajo riesgo), el modelo estima una probabilidad de impago de **-0.22 (-22%)**, un valor matemáticamente imposible. Para el "Perfil 2" (cliente de altísimo riesgo), la probabilidad estimada asciende a **1.10 (110%)**, superando el límite superior lógico. 
+
+Al no poder acotar las predicciones al intervalo $[0,1]$, el MPL queda descartado como herramienta predictiva y analítica para este problema de *Credit Scoring*, obligándonos a abandonar el método de Mínimos Cuadrados Ordinarios (MCO) y transitar hacia modelos de elección discreta estimados por Máxima Verosimilitud (MV).
 
