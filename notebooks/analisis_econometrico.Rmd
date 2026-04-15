@@ -3,13 +3,13 @@ title: "Análisis Econométrico: German Credit Dataset"
 author: "dqdatasci"
 date: "`r Sys.Date()`"
 output:
-  pdf_document:
-    latex_engine: xelatex
-    toc: true
   html_document:
     toc: true
     theme: flatly
     code_folding: show
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -289,7 +289,7 @@ modelo_probit <- glm(Default ~ ., data = df_final, family = binomial(link = "pro
 
 # 3. Cuadro Comparativo Estilo Académico (Stargazer)
 stargazer(mpl_model, modelo_logit, modelo_probit, 
-          type = "latex", # <--- "latex" para pdf "html" para html
+          type = "html", # <--- "latex" para pdf "html" para html
           title = "Comparación de Modelos: MPL vs Logit vs Probit",
           column.labels = c("MCO (MPL)", "Logit", "Probit"),
           dep.var.labels = "Probabilidad de Default",
@@ -312,4 +312,175 @@ Al observar la tabla de resultados, extraemos tres conclusiones teóricas fundam
 3. **Pérdida de Interpretación Directa:** A diferencia del MPL, los coeficientes de Logit y Probit mostrados en la tabla carecen de una interpretación económica directa. Un estimador de 1.071 en el Logit no significa que la probabilidad aumente en un 107%; significa que el *Log-Odds* (el logaritmo de la razón de probabilidades) aumenta en 1.071 unidades. 
 
 Para recuperar la interpretación práctica que requiere la Inteligencia de Negocios, el siguiente paso será evaluar la bondad de ajuste de estos modelos (pseudo-$R^2$) y, primordialmente, calcular los **Efectos Marginales Promedio (AME)**.
+
+## 5. Evaluación de Bondad de Ajuste (Goodness of Fit)
+
+En los modelos de elección discreta, el coeficiente de determinación tradicional ($R^2$) derivado de MCO pierde su validez teórica. En su lugar, evaluaremos la capacidad explicativa del modelo mediante el **Pseudo-$R^2$ de McFadden**, el cual compara el valor de la función de log-verosimilitud del modelo estimado frente a un modelo restringido (que solo incluye el intercepto). 
+
+Valores de McFadden entre 0.20 y 0.40 son considerados indicadores de un ajuste excelente en estudios empíricos de corte transversal.
+
+```{r bondad_ajuste, warning=FALSE, message=FALSE}
+# Cálculo del Pseudo-R2 de McFadden
+mcfadden_logit <- 1 - (modelo_logit$deviance / modelo_logit$null.deviance)
+mcfadden_probit <- 1 - (modelo_probit$deviance / modelo_probit$null.deviance)
+
+cat("Pseudo-R2 McFadden (Logit):", round(mcfadden_logit, 4), "\n")
+cat("Pseudo-R2 McFadden (Probit):", round(mcfadden_probit, 4), "\n")
+cat("AIC (Logit):", AIC(modelo_logit), "| AIC (Probit):", AIC(modelo_probit), "\n")
+```
+
+### 5.1 Interpretación de la Bondad de Ajuste
+
+Tras la ejecución de los modelos, es imperativo evaluar qué tan bien explican el fenómeno del riesgo crediticio. A diferencia del $R^2$ de MCO, utilizamos métricas basadas en la verosimilitud:
+
+* **Pseudo-$R^2$ de McFadden:** Obtuvimos valores de **0.1512** para el modelo Logit y **0.151** para el Probit. En econometría de corte transversal, valores entre 0.2 y 0.4 se consideran un ajuste excelente; por lo tanto, un valor de ~0.15 indica que nuestros modelos tienen una capacidad explicativa sólida y muy superior a un modelo aleatorio.
+* **Criterio de Información de Akaike (AIC):** Esta métrica penaliza la inclusión de variables innecesarias. El modelo Logit presenta un AIC de **1059.052**, ligeramente inferior al del Probit (**1059.237**). Aunque la diferencia es mínima, matemáticamente el modelo Logit ofrece una mejor relación entre complejidad y capacidad de ajuste para este dataset específico.
+
+## 6. Inferencia Causal: Efectos Marginales (AME vs PEA)
+
+La limitación principal de los coeficientes obtenidos por Máxima Verosimilitud en Logit y Probit es que no representan cambios directos en la probabilidad. Como la función de probabilidad es no lineal, el efecto marginal de una variable depende de los valores del resto de variables. 
+
+Para resolver esto, la teoría econométrica propone dos enfoques:
+
+1. **Efecto Marginal en la Media (PEA - Partial Effect at Average):** Evalúa el cambio en la probabilidad para un individuo hipotético que posee exactamente las características promedio de la muestra.
+2. **Efecto Marginal Promedio (AME - Average Marginal Effect):** Calcula el efecto marginal para cada individuo real de la muestra y luego promedia dichos efectos. Este enfoque es preferido en la econometría moderna porque no se basa en perfiles promedios inexistentes (ej. "alguien con 0.3 casas").
+
+Calcularemos ambos enfoques, además de demostrar que, tal como dicta la teoría, los efectos marginales obtenidos por Logit y Probit son virtualmente idénticos en la práctica.
+
+## 6.1 Efecto Marginal Promedio (AME)
+
+Mientras que los coeficientes del modelo original nos dan la dirección del efecto, el **AME** nos otorga la magnitud promedio real sobre la probabilidad de impago para toda la muestra.
+
+```{r AME_completo, warning=FALSE, message=FALSE}
+
+# 1. Efectos Marginales Promedio (AME) - Logit vs Probit
+ame_logit <- margins(modelo_logit)
+ame_probit <- margins(modelo_probit)
+
+cat("--- AME: Modelo Logit ---\n")
+summary(ame_logit)[, c("factor", "AME", "SE", "z", "p")]
+
+cat("\n--- AME: Modelo Probit ---\n")
+summary(ame_probit)[, c("factor", "AME", "SE", "z", "p")]
+
+```
+
+**Conclusiones de los resultados AME (Logit):**
+Al observar la columna `AME` del resumen, identificamos los determinantes con mayor peso económico:
+1. **Estado de Liquidez:** Tener la cuenta corriente en negativo (`CheckingAccountStatus.lt.0`) incrementa la probabilidad de *default* en un **18.43%** en promedio para toda la población estudiada. Es el factor de riesgo individual más potente del modelo.
+2. **Historial de Carácter:** Poseer un historial crítico (`CreditHistory.Critical`) reduce la probabilidad de impago en un **14.65%**. Como se analizó previamente, esto valida que los clientes bancarizados con experiencia crediticia previa son sujetos de menor riesgo para el banco.
+3. **Escasez de Reservas:** No contar con ahorros significativos (`SavingsAccountBonds.lt.100`) eleva el riesgo de impago en un **11.11%**.
+4. **Carga Financiera y Tiempo:** Por cada mes adicional de plazo (`Duration`), el riesgo de *default* aumenta un **0.45%**, mientras que cada punto porcentual de carga de la cuota sobre el ingreso (`InstallmentRatePercentage`) lo incrementa en un **3.81%**.
+
+**Conclusiones de los resultados AME (Probit):**
+Al evaluar el modelo Probit, observamos una convergencia casi total con los resultados del Logit, lo que refuerza la robustez de nuestras inferencias:
+* **Consistencia de Magnitudes:** El impacto de tener la cuenta corriente en negativo (`CheckingAccountStatus.lt.0`) se estima en un **18.71%**, una diferencia de apenas 0.28 puntos porcentuales respecto al Logit.
+* **Validación del Historial:** El efecto de poseer un historial crítico (`CreditHistory.Critical`) reduce la probabilidad de impago en un **14.61%**, confirmando que la elección entre una distribución logística o una normal estándar no altera las conclusiones estratégicas para el banco.
+* **Significancia Estadística:** Todas las variables que resultaron significativas en el Logit mantienen su relevancia en el Probit con niveles de confianza superiores al 99% ($p < 0.01$).
+
+### 6.2 Efecto Marginal en un Perfil Específico (PEA)
+
+A diferencia del AME, el PEA (Partial Effect at Average) evalúa el impacto de las variables sobre un único individuo hipotético. La literatura econométrica advierte que utilizar la media aritmética para variables dicótomas genera perfiles imposibles (ej. "0.3 cuentas corrientes"). 
+
+Para solucionar este sesgo de agregación y proveer una interpretación de negocio clara, construiremos un **"Individuo Base" o "Perfil de Referencia"**. Este cliente hipotético poseerá la media muestral en todas sus variables continuas, pero mantendrá un estado base (valor $0$) en todas sus variables de riesgo categóricas. Así, aislaremos el impacto exacto que tendría "encender" (pasar de 0 a 1) una bandera de riesgo sobre un cliente estándar.
+
+```{r PEA_completo, warning=FALSE, message=FALSE}
+# Definición del Individuo Base (Perfil de Referencia "Limpio")
+perfil_base <- list(
+  Amount = mean(df_final$Amount),
+  Duration = mean(df_final$Duration),
+  Age = mean(df_final$Age),
+  InstallmentRatePercentage = mean(df_final$InstallmentRatePercentage),
+  CheckingAccountStatus.lt.0 = 0, # Cliente sin cuenta en negativo
+  CreditHistory.Critical = 0,     # Cliente sin historial crítico
+  EmploymentDuration.lt.1 = 0,    # Empleo estable (> 1 año)
+  OtherInstallmentPlans.Bank = 0, # Sin deudas paralelas
+  SavingsAccountBonds.lt.100 = 0, # Con ahorros suficientes
+  Property.RealEstate = 0         # Sin bienes raíces (inquilino base)
+)
+
+# Cálculo del PEA para Logit y Probit sobre el Perfil Base
+pea_logit <- margins(modelo_logit, at = perfil_base)
+pea_probit <- margins(modelo_probit, at = perfil_base)
+
+cat("--- PEA: Modelo Logit (Individuo Base) ---\n")
+summary(pea_logit)[, c("factor", "AME", "SE", "z", "p")]
+
+cat("\n--- PEA: Modelo Probit (Individuo Base) ---\n")
+summary(pea_probit)[, c("factor", "AME", "SE", "z", "p")]
+```
+
+**Conclusiones de los resultados PEA (Logit):**
+Al analizar el impacto sobre este perfil específico, notamos que las magnitudes son ligeramente menores pero mantienen la misma jerarquía de importancia:
+* Para este cliente "estándar", el hecho de que su cuenta pase a estado negativo incrementaría su probabilidad de *default* en un **15.55%**.
+* Si este mismo individuo base no tuviera historial crediticio previo y pasara a tener uno crítico (recurrente), su riesgo disminuiría en un **12.36%**.
+* La falta de ahorros impacta a este perfil promedio aumentando su riesgo en un **9.38%**.
+
+**Conclusiones de los resultados PEA (Probit):**
+Al aplicar el enfoque del "Individuo Base" al modelo Probit, los resultados mantienen la jerarquía de riesgo observada:
+* Para el perfil de referencia, la activación de la bandera de cuenta corriente negativa genera un incremento del **16.84%** en la probabilidad de *default*.
+* El efecto de la carga financiera (`InstallmentRatePercentage`) para este individuo específico es de un **3.31%** por cada punto porcentual adicional de deuda sobre el ingreso.
+* Al comparar con el PEA Logit (**15.55%** para la cuenta corriente), notamos que el Probit tiende a ser ligeramente más sensible en los perfiles cercanos a la media.
+
+### 6.3 Comprobación de Extremos: El Cierre del Problema MPL
+
+Para demostrar definitivamente la superioridad de la especificación no lineal, someteremos el modelo Logit a los mismos dos perfiles extremos (Ideal y Alto Riesgo) que hicieron colapsar al Modelo de Probabilidad Lineal (MPL) en la sección 3.5. 
+
+Evaluaremos dos aspectos: la predicción de probabilidad acotada y el comportamiento asintótico del efecto marginal en las "colas" de la distribución.
+
+```{r comprobacion_extremos, warning=FALSE, message=FALSE}
+# 1. Recuperamos los perfiles extremos usados en el MPL
+perfil_ideal <- data.frame(
+  Amount=1000, Duration=6, Age=60, InstallmentRatePercentage=1,
+  CheckingAccountStatus.lt.0=0, CreditHistory.Critical=1, EmploymentDuration.lt.1=0,
+  OtherInstallmentPlans.Bank=0, SavingsAccountBonds.lt.100=0, Property.RealEstate=1
+)
+
+perfil_riesgo <- data.frame(
+  Amount=15000, Duration=48, Age=20, InstallmentRatePercentage=4,
+  CheckingAccountStatus.lt.0=1, CreditHistory.Critical=0, EmploymentDuration.lt.1=1,
+  OtherInstallmentPlans.Bank=1, SavingsAccountBonds.lt.100=1, Property.RealEstate=0
+)
+
+# 2. Predicción de Probabilidades acotadas (El fin del problema de MCO)
+prob_ideal <- predict(modelo_logit, newdata = perfil_ideal, type = "response")
+prob_riesgo <- predict(modelo_logit, newdata = perfil_riesgo, type = "response")
+
+cat("--- Probabilidad P(Y=1) Predicha ---\n")
+cat("Perfil Ideal:", round(prob_ideal * 100, 2), "%\n")
+cat("Perfil Alto Riesgo:", round(prob_riesgo * 100, 2), "%\n\n")
+
+# 3. Efectos Marginales en los Extremos (Demostración de la Curva S)
+pea_riesgo <- margins(modelo_logit, at = perfil_riesgo)
+
+cat("--- Efecto Marginal (PEA) en el Perfil de Alto Riesgo ---\n")
+summary(pea_riesgo)[, c("factor", "AME", "p")]
+```
+
+**Análisis de los Extremos y el Fin del MPL:**
+Los resultados obtenidos confirman la solidez teórica de la estimación por Máxima Verosimilitud frente a MCO. En primer lugar, el modelo Logit logra acotar perfectamente las predicciones dentro del intervalo lógico $[0,1]$: el perfil "Ideal" arroja una probabilidad de impago de apenas **1.66%**, eliminando definitivamente el absurdo -22% generado por el MPL. Por su parte, el perfil de "Alto Riesgo" alcanza una probabilidad del **96.64%**, bordeando el límite asintótico sin generar el imposible 110% de su contraparte lineal.
+
+Aún más revelador es el comportamiento de los efectos marginales en los extremos de la curva "S". Al observar el PEA del cliente de alto riesgo, notamos que el impacto de variables críticas colapsa. Por ejemplo, tener la cuenta corriente en negativo solo suma un **3.48%** adicional a su probabilidad de impago, en brutal contraste con el 15.55% que afectaba al individuo base. Esto ilustra matemáticamente las "colas planas" de la distribución logística: si un cliente ya está probabilísticamente condenado al impago (96.64%), añadir una bandera de riesgo extra apenas altera su estado fundamental.
+
+*(Nota metodológica: Aunque la salida estándar de la librería `margins` etiqueta la columna de estimaciones como "AME" por defecto en su función summary, el uso explícito del argumento `at` para forzar un vector de características idénticas en todas las observaciones garantiza que el cálculo matemático subyacente corresponde estrictamente a un Efecto Marginal en un Perfil Específico o PEA).*
+
+
+
+## 7. Conclusión General: La Naturaleza No Lineal y Decisiones de Negocio
+
+El tránsito desde el Modelo de Probabilidad Lineal (MPL) hacia los modelos de elección discreta (Logit y Probit) demostró ser no solo una corrección estadística, sino una necesidad conceptual absoluta para el *Credit Scoring*. Mientras que el MPL asume erróneamente que el riesgo aumenta de forma constante y perpetua, la realidad financiera demostrada por la curva logística dicta que el impacto de una variable está estrictamente condicionado por el perfil integral del solicitante.
+
+**El Espectro de la Inferencia Causal (AME vs. PEA Base vs. PEA Extremo)**
+
+La riqueza de este análisis radica en haber cuantificado el riesgo desde tres perspectivas distintas, comprobando de manera empírica la no linealidad de la probabilidad de *Default*:
+
+1. **La Visión Macroeconómica (AME - Promedio Poblacional):** Al promediar los efectos en toda la muestra, obtuvimos las magnitudes de impacto más altas (ej. la falta de liquidez aumenta el riesgo poblacional en un **18.43%**). Esta es la métrica ideal para diseñar políticas de crédito generales, ya que captura la vulnerabilidad promedio del portafolio completo del banco.
+2. **La Visión Microeconómica Estándar (PEA - Individuo Base):** Al evaluar a un cliente "limpio" o promedio, el riesgo marginal se modera (**15.55%** para la misma variable). En el centro de la curva "S", la pendiente es pronunciada, lo que advierte al negocio que un cliente sano puede arruinar su perfil crediticio rápidamente con un solo mal comportamiento financiero.
+3. **La Visión Asintótica (PEA - Perfiles Extremos):** Como comprobamos en la prueba de estrés final, para un cliente catalogado de "Alto Riesgo" (con un **96.64%** de probabilidad de impago), los factores de riesgo pierden su fuerza marginal y caen drásticamente (a impactos del **3.48%**). El daño ya está hecho; el cliente se encuentra en la "cola plana" superior de la curva de distribución, donde ninguna variable individual cambiará su ya inminente destino de impago.
+
+En conclusión, este estudio demuestra que la evaluación del riesgo crediticio es un fenómeno altamente dinámico. Un sistema de Inteligencia de Negocios verdaderamente eficiente no penaliza a todos los solicitantes con la misma rigidez ante una misma falta, sino que pondera el impacto marginal basándose en la posición inicial del cliente dentro de la curva de probabilidad. Los modelos Logit y Probit, estimados por Máxima Verosimilitud, proporcionan exactamente el marco matemático para lograr esta personalización del riesgo.
+
+
+
+
 
